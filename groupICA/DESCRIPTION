@@ -4,6 +4,8 @@ Version: 0.1.1
 Author: Niklas Pfister and Sebastian Weichwald
 Maintainer: Niklas Pfister <pfister@stat.math.ethz.ch>
 Description: Contains an implementation of groupICA.
+URL: https://github.com/sweichwald/groupICA-R
+BugReports: https://github.com/sweichwald/groupICA-R/issues
 Depends: R (>= 3.2.3)
 License: GPL-3
 Encoding: UTF-8
