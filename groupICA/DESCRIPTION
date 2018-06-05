@@ -1,0 +1,12 @@
+Package: groupICA
+Title: groupICA
+Version: 0.1.1
+Author: Niklas Pfister and Sebastian Weichwald
+Maintainer: Niklas Pfister <pfister@stat.math.ethz.ch>
+Description: Contains an implementation of groupICA.
+Depends: R (>= 3.2.3)
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Imports: stats, MASS
+RoxygenNote: 6.0.1
