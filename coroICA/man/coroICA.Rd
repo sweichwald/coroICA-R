@@ -6,8 +6,10 @@
 \usage{
 coroICA(X, group_index = NA, partition_index = NA, n_components = NA,
   n_components_uwedge = NA, rank_components = FALSE,
-  pairing = "complement", groupsize = 1, partitionsize = NA,
-  max_iter = 1000, tol = 1e-12, silent = TRUE)
+  pairing = "complement", max_matrices = 1, groupsize = 1,
+  partitionsize = NA, timelags = NA, instantcov = TRUE,
+  max_iter = 1000, tol = 1e-12, minimize_loss = FALSE,
+  condition_threshold = NA, silent = TRUE)
 }
 \arguments{
 \item{X}{data matrix. Each column corresponds to one predictor
@@ -37,10 +39,16 @@ dimensions is used.}
 \item{rank_components}{boolean, optional. When TRUE, the
 components will be ordered in decreasing stability.}
 
-\item{pairing}{either 'complement' or 'allpairs'. If 'allpairs'
-the difference matrices are computed for all pairs of partition
-covariance matrices, while if 'complement' a one-vs-complement
-scheme is used.}
+\item{pairing}{either 'complement', 'neighbouring' or
+'allpairs'. If 'allpairs' the difference matrices are computed
+for all pairs of partition covariance matrices, if 'complement'
+a one-vs-complement scheme is used and if 'neighbouring'
+differences with the right neighbour parition are used.}
+
+\item{max_matrices}{float or 'no_partitions', optional
+(default=1).  The fraction of (lagged) covariance matrices to
+use during training or, if 'no_partitions', at most as many
+covariance matrices are used as there are partitions.}
 
 \item{groupsize}{int, optional. Approximate number of samples in
 each group when using a rigid grid as groups. If NA is passed,
@@ -48,17 +56,34 @@ all samples will be in one group unless group_index is passed
 during fitting in which case the provided group index is used
 (the latter is the advised and preferred way).}
 
-\item{partitionsize}{int, optional. Approxiate number of samples
-in each partition when using a rigid grid as partition. If NA is
-passed, a (hopefully sane) default is used, again, unless
-partition_index is passed during fitting in which case the
-provided partition index is used.}
+\item{partitionsize}{int or vector of ints, optional. Approximate
+number of samples in each partition when using a rigid grid as
+partition. If NA is passed, a (hopefully sane) default is used,
+again, unless partition_index is passed during fitting in which
+case the provided partition index is used. If a vector is
+passed, each element is used to construct a grid and all
+resulting partitions are used.}
+
+\item{timelags}{vector of ints, optional. Specifies which timelags
+should be included. 0 correpsonds to covariance matrix.}
+
+\item{instantcov}{boolean, default TRUE. Specifies whether to
+include covariance matrix when timelags are used.}
 
 \item{max_iter}{int, optional. Maximum number of iterations for
 the uwedge approximate joint diagonalisation during fitting.}
 
 \item{tol}{float, optional. Tolerance for terminating the uwedge
 approximate joint diagonalisation during fitting.}
+
+\item{minimize_loss}{boolean, optional. Parameter is passed to
+uwedge and specifies whether to compute loss function in each
+iteration step of uwedge.}
+
+\item{condition_threshold}{float, optional. Parameter is passed to
+uwedge and specifies whether and at which threshold to terminate
+uwedge iteration depending on the condition number of the
+unmixing matrix.}
 
 \item{silent}{boolean whether to supress status outputs.}
 }
@@ -112,7 +137,7 @@ A <- A\%*\%t(A)
 X <- t(A\%*\%t(S+H))
 
 # Apply coroICA
-res <- coroICA(X, group_index, partition_index, pairing="neighbour", rank_components=TRUE)
+res <- coroICA(X, group_index, partition_index, pairing="neighbouring", rank_components=TRUE)
 
 # Compare results
 par(mfrow=c(2,2))

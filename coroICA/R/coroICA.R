@@ -24,24 +24,42 @@
 ##'   dimensions is used.
 ##' @param rank_components boolean, optional. When TRUE, the
 ##'   components will be ordered in decreasing stability.
-##' @param pairing either 'complement' or 'allpairs'. If 'allpairs'
-##'   the difference matrices are computed for all pairs of partition
-##'   covariance matrices, while if 'complement' a one-vs-complement
-##'   scheme is used.
+##' @param pairing either 'complement', 'neighbouring' or
+##'   'allpairs'. If 'allpairs' the difference matrices are computed
+##'   for all pairs of partition covariance matrices, if 'complement'
+##'   a one-vs-complement scheme is used and if 'neighbouring'
+##'   differences with the right neighbour parition are used.
+##' @param max_matrices float or 'no_partitions', optional
+##'   (default=1).  The fraction of (lagged) covariance matrices to
+##'   use during training or, if 'no_partitions', at most as many
+##'   covariance matrices are used as there are partitions.
 ##' @param groupsize int, optional. Approximate number of samples in
 ##'   each group when using a rigid grid as groups. If NA is passed,
 ##'   all samples will be in one group unless group_index is passed
 ##'   during fitting in which case the provided group index is used
 ##'   (the latter is the advised and preferred way).
-##' @param partitionsize int, optional. Approxiate number of samples
-##'   in each partition when using a rigid grid as partition. If NA is
-##'   passed, a (hopefully sane) default is used, again, unless
-##'   partition_index is passed during fitting in which case the
-##'   provided partition index is used.
+##' @param partitionsize int or vector of ints, optional. Approximate
+##'   number of samples in each partition when using a rigid grid as
+##'   partition. If NA is passed, a (hopefully sane) default is used,
+##'   again, unless partition_index is passed during fitting in which
+##'   case the provided partition index is used. If a vector is
+##'   passed, each element is used to construct a grid and all
+##'   resulting partitions are used.
+##' @param timelags vector of ints, optional. Specifies which timelags
+##'   should be included. 0 correpsonds to covariance matrix.
+##' @param instantcov boolean, default TRUE. Specifies whether to
+##'   include covariance matrix when timelags are used.
 ##' @param max_iter int, optional. Maximum number of iterations for
 ##'   the uwedge approximate joint diagonalisation during fitting.
 ##' @param tol float, optional. Tolerance for terminating the uwedge
 ##'   approximate joint diagonalisation during fitting.
+##' @param minimize_loss boolean, optional. Parameter is passed to
+##'   uwedge and specifies whether to compute loss function in each
+##'   iteration step of uwedge.
+##' @param condition_threshold float, optional. Parameter is passed to
+##'   uwedge and specifies whether and at which threshold to terminate
+##'   uwedge iteration depending on the condition number of the
+##'   unmixing matrix.
 ##' @param silent boolean whether to supress status outputs.
 ##' 
 ##' @return object of class 'CoroICA' consisting of the following
@@ -102,7 +120,7 @@
 ##' X <- t(A%*%t(S+H))
 ##' 
 ##' # Apply coroICA
-##' res <- coroICA(X, group_index, partition_index, pairing="neighbour", rank_components=TRUE)
+##' res <- coroICA(X, group_index, partition_index, pairing="neighbouring", rank_components=TRUE)
 ##' 
 ##' # Compare results
 ##' par(mfrow=c(2,2))
@@ -120,121 +138,184 @@ coroICA <- function(X,
                     n_components_uwedge=NA,
                     rank_components=FALSE,
                     pairing='complement',
+                    max_matrices=1,
                     groupsize=1,
                     partitionsize=NA,
+                    timelags=NA,
+                    instantcov=TRUE,
                     max_iter=1000,
                     tol=1e-12,
+                    minimize_loss=FALSE,
+                    condition_threshold=NA,
                     silent=TRUE){
 
   d <- dim(X)[2]
   n <- dim(X)[1]
 
-  # generate group and partition indices as needed
+  # check timelags consistency
+  if(is.na(timelags)){
+    if(!instantcov){
+      stop("No timelags and instantcov = FALSE. Change settings.")
+    }
+    else{
+      timelags <- 0
+    }
+  }
+  if(0 %in% timelags){
+    if(!instantcov){
+      warning("intantcov and timelags are inconsistent. Including timelag 0 in the model")
+    }
+  }
+  else{
+    if(instantcov){
+      timelags <- c(0, timelags)
+    }
+  }
+  no_timelags <- length(timelags)
+
+  # generate group index as needed
   if(!is.numeric(group_index) & is.na(groupsize)){
     group_index <- rep(0, n)
   }
   else if(!is.numeric(group_index)){
     group_index <- rigidgroup(n, groupsize)
   }
+  no_groups <- length(unique(group_index))
+
+  # generate partiton indices as needed
   if(!is.numeric(partition_index) & is.na(partitionsize)){
     smallest_group <- min(unique(group_index, return_counts=TRUE)$counts)
-    partition_index <- rigidpartition(group_index,
-                                      max(c(d, floor(smallest_group/2))))
+    partition_indices <- list(rigidpartition(group_index,
+                                           max(c(d, floor(smallest_group/2)))))
   }
   else if(!is.numeric(partition_index)){
-    partition_index <- rigidpartition(group_index, partitionsize)
+    partition_indices <- lapply(partitionsize,
+                                function(x) rigidpartition(group_index, x))
+  }
+  else{
+    partition_indices <- list(partition_index)
   }
   
   
-  no_groups <- length(unique(group_index))
-  
   if(!silent){
-    print('coroICA: computing covmats')
+    print("coroICA: computing covmats")
   }
   
   # estimate covariances (depending on pairing)
-  if(pairing == 'complement'){
-    no_pairs <- 0
-    for(env in unique(group_index)){
-      if(length(unique(partition_index[group_index == env]))>1){
-        no_pairs <- no_pairs+length(unique(partition_index[group_index == env]))
-      }
+  if(pairing == "complement"){
+    if(max_matrices == "no_partitions"){
+      max_matrices <- 1
     }
-    covmats <- vector("list", no_pairs)
-    idx <- 1
-    for(env in unique(group_index)){
-      if(length(unique(partition_index[group_index == env]))==1){
-        warning(paste("Removing group", toString(env),
-                      "since the partition is trivial, i.e., contains only one set"))
-      }
-      else{
-        for(subenv in unique(partition_index[group_index == env])){
-          ind1 <- ((partition_index == subenv) &
-                     (group_index == env))
-          ind2 <- ((partition_index != subenv) &
-                     (group_index == env))
-          covmats[[idx]] <- cov(X[ind1,]) - cov(X[ind2,])
-          idx <- idx + 1
+    no_pairs <- 0
+    for(partition_index in partition_indices){
+      for(env in unique(group_index)){
+        if(length(unique(partition_index[group_index == env]))>1){
+          no_pairs <- no_pairs+length(unique(partition_index[group_index == env]))
         }
       }
     }
-  }
-  else if(pairing == 'allpairs'){
-    no_pairs <-  0
-    subvec <- rep(0, no_groups)
-    for(i in 1:no_groups){
-      env <- unique(group_index)[i]
-      subvec[i] <- length(unique(partition_index[group_index == env]))
-      no_pairs <- no_pairs + subvec[i]*(subvec[i]-1)/2
-    }
-    covmats <- vector("list", no_pairs)
+    covmats <- vector("list", no_pairs*no_timelags)
     idx <- 1
-    for(count in 1:no_groups){
-      env <- unique(group_index)[count]
-      unique_subs <- unique(partition_index[group_index == env])
-      if(subvec[count] == 1){
-        warning(paste("Removing group", toString(env),
-                      "since the partition is trivial, i.e., contains only one set"))
+    for(partition_index in partition_indices){
+      for(env in unique(group_index)){
+        unique_partitions <- unique(partition_index[group_index == env])
+        unique_partitions <- sample(unique_partitions,
+                                    ceiling(max_matrices*length(unique_partitions)))
+        if(length(unique_partitions)==1){
+          warning(paste("Removing group", toString(env),
+                        "since the partition is trivial, i.e., contains only one set"))
+        }
+        else{
+          for(subenv in unique_partitions){
+            ind1 <- ((partition_index == subenv) &
+                       (group_index == env))
+            ind2 <- ((partition_index != subenv) &
+                       (group_index == env))
+            for(timelag in timelags){
+              covmats[[idx]] <- autocov(X[ind1,], timelag) - autocov(X[ind2,], timelag)
+              idx <- idx + 1
+            }
+          }
+        }
       }
-      else{
-        for(i in 1:(subvec[count]-1)){
-          for(j in (i+1):subvec[count]){
-            ind1 <- ((partition_index == unique_subs[i]) &
-                       (group_index == env))
-            ind2 <- ((partition_index == unique_subs[j]) &
-                       (group_index == env))
-            covmats[[idx]] <- cov(X[ind1,]) - cov(X[ind2,])
-            idx <- idx + 1
+    }
+    covmats <- covmats[1:(idx-1)]
+  }
+  else if(pairing == "allpairs"){
+    no_pairs <-  0
+    for(part_ind in 1:length(partition_indices)){
+      partition_index <- partition_indices[[part_ind]]
+      subvec_list[[part_ind]] <- rep(0, no_groups)
+      for(i in 1:no_groups){
+        env <- unique(group_index)[i]
+        subvec_list[[part_ind]][i] <- length(unique(partition_index[group_index == env]))
+        no_pairs <- no_pairs + subvec_list[[part_ind]][i]*(subvec_list[[part_ind]][i]-1)/2
+      }
+    }
+    covmats <- vector("list", no_pairs*no_timelags)
+    idx <- 1
+    for(part_ind in 1:length(partition_indices)){
+      partition_index <- partition_indices[[part_ind]]
+      for(count in 1:no_groups){
+        env <- unique(group_index)[count]
+        unique_subs <- unique(partition_index[group_index == env])
+        if(subvec_list[[part_ind]][count] == 1){
+          warning(paste("Removing group", toString(env),
+                        "since the partition is trivial, i.e., contains only one set"))
+        }
+        else{
+          for(i in 1:(subvec_list[[part_ind]][count]-1)){
+            for(j in (i+1):subvec_list[[part_ind]][count]){
+              ind1 <- ((partition_index == unique_subs[i]) &
+                         (group_index == env))
+              ind2 <- ((partition_index == unique_subs[j]) &
+                         (group_index == env))
+              for(timelag in timelags){
+                covmats[[idx]] <- autocov(X[ind1,], timelag) - autocov(X[ind2,], timelag)
+                idx <- idx + 1
+              }
+            }
           }
         }
       }
     }
   }
-  else if(pairing == 'neighbour'){
+  else if(pairing == "neighbouring"){
+    if(max_matrices == "no_partitions"){
+      max_matrices <- 1
+    }
     no_pairs <- 0
-    for(env in unique(group_index)){
-      if(length(unique(partition_index[group_index == env]))>1){
-        no_pairs <- no_pairs+length(unique(partition_index[group_index == env])) - 1
+    for(partition_index in partition_indices){
+      for(env in unique(group_index)){
+        if(length(unique(partition_index[group_index == env]))>1){
+          no_pairs <- no_pairs+length(unique(partition_index[group_index == env])) - 1
+        }
       }
     }
-    covmats <- vector("list", no_pairs)
+    covmats <- vector("list", no_pairs*no_timelags)
     idx <- 1
-    for(env in unique(group_index)){
-      if(length(unique(partition_index[group_index == env]))==1){
-        warning(paste("Removing group", toString(env),
-                      "since the partition is trivial, i.e., contains only one set"))
-      }
-      else{
-        unique_partition <- unique(partition_index[group_index == env])
-        for(subenv_ind in 1:(length(unique_partition)-1)){
-          subenv1 <- unique_partition[subenv_ind]
-          subenv2 <- unique_partition[subenv_ind+1]
-          ind1 <- ((partition_index == subenv1) &
-                     (group_index == env))
-          ind2 <- ((partition_index == subenv2) &
-                     (group_index == env))
-          covmats[[idx]] <- cov(X[ind1,]) - cov(X[ind2,])
-          idx <- idx + 1
+    for(partition_index in partition_indices){
+      for(env in unique(group_index)){
+        unique_partitions <- unique(partition_index[group_index == env])
+        unique_partitions <- sort(sample(unique_partitions,
+                                         ceiling(max_matrices*length(unique_partitions))))
+        if(length(unique_partitions)==1){
+          warning(paste("Removing group", toString(env),
+                        "since the partition is trivial, i.e., contains only one set"))
+        }
+        else{
+          for(subenv_ind in 1:(length(unique_partitions)-1)){
+            subenv1 <- unique_partitions[subenv_ind]
+            subenv2 <- unique_partitions[subenv_ind+1]
+            ind1 <- ((partition_index == subenv1) &
+                       (group_index == env))
+            ind2 <- ((partition_index == subenv2) &
+                       (group_index == env))
+            for(timelag in timelags){
+              covmats[[idx]] <- autocov(X[ind1,], timelag) - autocov(X[ind2,], timelag)
+              idx <- idx + 1
+            }
+          }
         }
       }
     }
@@ -248,8 +329,8 @@ coroICA <- function(X,
     stop("Not sufficiently many covariance matrices.")
   }
 
-  # add total observational covariance for normalization
-  covmats <- append(list(cov(X)), covmats)
+  # compute total observational covariance for normalization
+  Rx0 <- cov(X)
 
   if(!silent){
     print('coroICA: computed cov matrices')
@@ -258,17 +339,23 @@ coroICA <- function(X,
   # joint diagonalisation
   adj_res <- uwedge(covmats,
                     init=NA,
-                    rm_x0=TRUE,
+                    Rx0=Rx0,
                     return_diag=FALSE,
                     tol=tol,
                     max_iter=max_iter,
                     n_components=n_components_uwedge,
+                    minimize_loss=minimize_loss,
+                    condition_threshold=condition_threshold,
                     silent=silent)
   V <- adj_res$V
   
   if(!silent){
     print('coroICA: finished uwedge ajd')
   }
+
+  # normalise V
+  normaliser <- diag(V %*% Rx0 %*% t(V))
+  V <- V / matrix((sign(normaliser)*sqrt(abs(normaliser))), nrow(V), d)
 
   # rank components
   if(rank_components | !is.na(n_components)){
@@ -317,3 +404,22 @@ rigidgroup <- function(len, nosamples){
   }
   return(index)
 }
+
+center_rowmeans <- function(x){
+  xcenter <- rowMeans(x)
+  return(x - rep(xcenter, ncol(x)))
+}
+
+autocov <- function(X, lag=0){
+  if(lag==0){
+    return(cov(X))
+  }
+  else{
+    n <- ncol(X)
+    A <- center_rowmeans(X[, lag:n])
+    B <- center_rowmeans(X[, 1:(n-lag)])
+    new <- ncol(A) - 1
+    return((A %*% t(B))/new)
+  }
+}
+

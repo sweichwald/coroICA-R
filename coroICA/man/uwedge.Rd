@@ -4,9 +4,9 @@
 \alias{uwedge}
 \title{uwedge}
 \usage{
-uwedge(Rx, init = NA, rm_x0 = TRUE, return_diag = FALSE,
-  tol = 1e-10, max_iter = 1000, n_components = NA,
-  minimize_loss = FALSE, condition_threshold = NA, silent = TRUE)
+uwedge(Rx, init = NA, Rx0 = NA, return_diag = FALSE, tol = 1e-10,
+  max_iter = 1000, n_components = NA, minimize_loss = FALSE,
+  condition_threshold = NA, silent = TRUE)
 }
 \arguments{
 \item{Rx}{list of matrices to be diagaonlized.}
@@ -14,8 +14,7 @@ uwedge(Rx, init = NA, rm_x0 = TRUE, return_diag = FALSE,
 \item{init}{matrix used in first step of initialization. If NA a
 default based on PCA is used}
 
-\item{rm_x0}{boolean whether to also diagonalize first matrix in
-\code{Rx} or only use it for scaling.}
+\item{Rx0}{matrix used for initial scaling.}
 
 \item{return_diag}{boolean. Specifies whether to return the list
 of diagonalized matrices.}
@@ -79,7 +78,6 @@ Rx <- lapply(1:20, function(x) A \%*\% diag(rnorm(d)) \%*\% t(A))
 # Perform approximate joint diagonalization
 ptm <- proc.time()
 res <- uwedge(Rx,
-              rm_x0=FALSE,
               return_diag=TRUE,
               max_iter=1000)
 print(proc.time()-ptm)

@@ -8,8 +8,7 @@
 ##' @param Rx list of matrices to be diagaonlized.
 ##' @param init matrix used in first step of initialization. If NA a
 ##'   default based on PCA is used
-##' @param rm_x0 boolean whether to also diagonalize first matrix in
-##'   \code{Rx} or only use it for scaling.
+##' @param Rx0 matrix used for initial scaling.
 ##' @param return_diag boolean. Specifies whether to return the list
 ##'   of diagonalized matrices.
 ##' @param tol float, optional. Tolerance for terminating the
@@ -74,7 +73,6 @@
 ##' # Perform approximate joint diagonalization
 ##' ptm <- proc.time()
 ##' res <- uwedge(Rx,
-##'               rm_x0=FALSE,
 ##'               return_diag=TRUE,
 ##'               max_iter=1000)
 ##' print(proc.time()-ptm)
@@ -85,7 +83,7 @@
 
 uwedge <- function(Rx,
                    init=NA,
-                   rm_x0=TRUE,
+                   Rx0=NA,
                    return_diag=FALSE,
                    tol=1e-10,
                    max_iter=1000,
@@ -98,9 +96,8 @@ uwedge <- function(Rx,
   # 0) Preprocessing
   
   # Remove and remember 0st matrix
-  Rx0 <- Rx[[1]]
-  if(rm_x0){
-    Rx <- Rx[-1]
+  if(is.na(Rx0)){
+    Rx0 <- Rx[[1]]
   }
   d <- dim(Rx0)[1]
   M <- length(Rx)
@@ -191,8 +188,6 @@ uwedge <- function(Rx,
     iteration <- current_best$iteration
   }
   else{
-    ## normaliser <- diag(V %*% Rx0 %*% t(V))
-    ## V <- V / matrix((sign(normaliser)*sqrt(abs(normaliser))), n_components, d)
     Rxdiag <- lapply(Rx, function(x) V %*% x %*% t(V))
     entries_tot <- M*(n_components^2-n_components)
     meanoffdiag <- sqrt(sum(sapply(Rxdiag, function(x) sum(x^2)-sum(diag(x^2))))/entries_tot)
