@@ -4,8 +4,9 @@
 \alias{uwedge}
 \title{uwedge}
 \usage{
-uwedge(Rx, init = NA, rm_x0 = TRUE, return_diag = FALSE, tol = 1e-10,
-  max_iter = 1000, n_components = NA, silent = TRUE)
+uwedge(Rx, init = NA, rm_x0 = TRUE, return_diag = FALSE,
+  tol = 1e-10, max_iter = 1000, n_components = NA,
+  minimize_loss = FALSE, condition_threshold = NA, silent = TRUE)
 }
 \arguments{
 \item{Rx}{list of matrices to be diagaonlized.}
@@ -26,6 +27,15 @@ iteration.}
 
 \item{n_components}{number of components to extract. If NA is
 passed, all components are used.}
+
+\item{minimize_loss}{boolean whether to compute loss function in
+each iteration step and output V with smallest loss over all
+iterations. Defaults to FALSE since it is computationally more
+expensive.}
+
+\item{condition_threshold}{float, optional. Stops iteration if
+condition number of V passes this threshold. Default NA, means
+no threshold is used.}
 
 \item{silent}{boolean whether to supress status outputs.}
 }
@@ -78,8 +88,8 @@ print(proc.time()-ptm)
 print(res$meanoffdiag)
 }
 \references{
-Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2017).
-GroupICA: Independent Component Analysis for grouped data.
+Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2018).
+Robustifying Independent Component Analysis by Adjusting for Group-Wise Stationary Noise
 ArXiv e-prints (arXiv:1806.01094).
 
 Tichavsky, P. and Yeredor, A. (2009).
@@ -87,7 +97,7 @@ Fast Approximate Joint Diagonalization Incorporating Weight Matrices.
 IEEE Transactions on Signal Processing.
 }
 \seealso{
-The function \code{\link{groupICA}} uses \code{uwedge}.
+The function \code{\link{coroICA}} uses \code{uwedge}.
 }
 \author{
 Niklas Pfister and Sebastian Weichwald

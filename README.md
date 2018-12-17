@@ -1,3 +1,3 @@
-# groupICA-R
+# coroICA-R
 
-Please refer to the project website at https://sweichwald.de/groupICA/.
+Please refer to the project website at https://sweichwald.de/coroICA/.

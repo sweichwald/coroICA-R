@@ -1,8 +1,8 @@
-##' Estimates the unmixing and confounded sources of the groupICA model
+##' Estimates the unmixing and confounded sources of the coroICA model
 ##' X=A(S+H).
 ##'
 ##' For further details see the references.
-##' @title groupICA
+##' @title coroICA
 ##' @param X data matrix. Each column corresponds to one predictor
 ##'   variable.
 ##' @param group_index vector coding to which group each sample
@@ -44,7 +44,7 @@
 ##'   approximate joint diagonalisation during fitting.
 ##' @param silent boolean whether to supress status outputs.
 ##' 
-##' @return object of class 'GroupICA' consisting of the following
+##' @return object of class 'CoroICA' consisting of the following
 ##'   elements
 ##'
 ##' \item{V}{the unmixing matrix.}
@@ -66,11 +66,11 @@
 ##' @author Niklas Pfister and Sebastian Weichwald
 ##'
 ##' @references
-##' Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2017).
-##' GroupICA: Independent Component Analysis for grouped data.
+##' Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2018).
+##' Robustifying Independent Component Analysis by Adjusting for Group-Wise Stationary Noise
 ##' ArXiv e-prints (arXiv:1806.01094).
 ##'
-##' Project website (https://sweichwald.de/groupICA/)
+##' Project website (https://sweichwald.de/coroICA/)
 ##'
 ##' @seealso The function \code{\link{uwedge}} allows to perform to
 ##'   perform an approximate joint matrix diagonalization.
@@ -101,8 +101,8 @@
 ##' A <- A%*%t(A)
 ##' X <- t(A%*%t(S+H))
 ##' 
-##' # Apply groupICA
-##' res <- groupICA(X, group_index, partition_index, rank_components=TRUE)
+##' # Apply coroICA
+##' res <- coroICA(X, group_index, partition_index, pairing="neighbour", rank_components=TRUE)
 ##' 
 ##' # Compare results
 ##' par(mfrow=c(2,2))
@@ -113,18 +113,18 @@
 ##' cor(res$Shat, S+H)
                 
 
-groupICA <- function(X,
-                     group_index=NA,
-                     partition_index=NA,
-                     n_components=NA,
-                     n_components_uwedge=NA,
-                     rank_components=FALSE,
-                     pairing='complement',
-                     groupsize=1,
-                     partitionsize=NA,
-                     max_iter=1000,
-                     tol=1e-12,
-                     silent=TRUE){
+coroICA <- function(X,
+                    group_index=NA,
+                    partition_index=NA,
+                    n_components=NA,
+                    n_components_uwedge=NA,
+                    rank_components=FALSE,
+                    pairing='complement',
+                    groupsize=1,
+                    partitionsize=NA,
+                    max_iter=1000,
+                    tol=1e-12,
+                    silent=TRUE){
 
   d <- dim(X)[2]
   n <- dim(X)[1]
@@ -149,7 +149,7 @@ groupICA <- function(X,
   no_groups <- length(unique(group_index))
   
   if(!silent){
-    print('groupICA: computing covmats')
+    print('coroICA: computing covmats')
   }
   
   # estimate covariances (depending on pairing)
@@ -210,10 +210,39 @@ groupICA <- function(X,
       }
     }
   }
+  else if(pairing == 'neighbour'){
+    no_pairs <- 0
+    for(env in unique(group_index)){
+      if(length(unique(partition_index[group_index == env]))>1){
+        no_pairs <- no_pairs+length(unique(partition_index[group_index == env])) - 1
+      }
+    }
+    covmats <- vector("list", no_pairs)
+    idx <- 1
+    for(env in unique(group_index)){
+      if(length(unique(partition_index[group_index == env]))==1){
+        warning(paste("Removing group", toString(env),
+                      "since the partition is trivial, i.e., contains only one set"))
+      }
+      else{
+        unique_partition <- unique(partition_index[group_index == env])
+        for(subenv_ind in 1:(length(unique_partition)-1)){
+          subenv1 <- unique_partition[subenv_ind]
+          subenv2 <- unique_partition[subenv_ind+1]
+          ind1 <- ((partition_index == subenv1) &
+                     (group_index == env))
+          ind2 <- ((partition_index == subenv2) &
+                     (group_index == env))
+          covmats[[idx]] <- cov(X[ind1,]) - cov(X[ind2,])
+          idx <- idx + 1
+        }
+      }
+    }
+  }
   else{
     stop('no appropriate pairing specified')
   }
-
+  
   # check if there are sufficiently many covariance matrices
   if(length(covmats)<=0){
     stop("Not sufficiently many covariance matrices.")
@@ -223,7 +252,7 @@ groupICA <- function(X,
   covmats <- append(list(cov(X)), covmats)
 
   if(!silent){
-    print('groupICA: computed cov matrices')
+    print('coroICA: computed cov matrices')
   }
 
   # joint diagonalisation
@@ -238,7 +267,7 @@ groupICA <- function(X,
   V <- adj_res$V
   
   if(!silent){
-    print('groupICA: finished uwedge ajd')
+    print('coroICA: finished uwedge ajd')
   }
 
   # rank components

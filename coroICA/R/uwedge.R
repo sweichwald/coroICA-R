@@ -17,6 +17,13 @@
 ##' @param max_iter int, optional. Maximum number of iterations.
 ##' @param n_components number of components to extract. If NA is
 ##'   passed, all components are used.
+##' @param minimize_loss boolean whether to compute loss function in
+##'   each iteration step and output V with smallest loss over all
+##'   iterations. Defaults to FALSE since it is computationally more
+##'   expensive.
+##' @param condition_threshold float, optional. Stops iteration if
+##'   condition number of V passes this threshold. Default NA, means
+##'   no threshold is used.
 ##' @param silent boolean whether to supress status outputs.
 ##' 
 ##' @return object of class 'uwedge' consisting of the following
@@ -44,15 +51,15 @@
 ##' @author Niklas Pfister and Sebastian Weichwald
 ##'
 ##' @references
-##' Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2017).
-##' GroupICA: Independent Component Analysis for grouped data.
+##' Pfister, N., S. Weichwald, P. Bühlmann and B. Schölkopf (2018).
+##' Robustifying Independent Component Analysis by Adjusting for Group-Wise Stationary Noise
 ##' ArXiv e-prints (arXiv:1806.01094).
 ##'
 ##' Tichavsky, P. and Yeredor, A. (2009).
 ##' Fast Approximate Joint Diagonalization Incorporating Weight Matrices.
 ##' IEEE Transactions on Signal Processing.
 ##'
-##' @seealso The function \code{\link{groupICA}} uses \code{uwedge}.
+##' @seealso The function \code{\link{coroICA}} uses \code{uwedge}.
 ##'
 ##' @examples
 ##' ## Example
@@ -83,6 +90,8 @@ uwedge <- function(Rx,
                    tol=1e-10,
                    max_iter=1000,
                    n_components=NA,
+                   minimize_loss=FALSE,
+                   condition_threshold=NA,
                    silent=TRUE){
 
   
@@ -118,6 +127,7 @@ uwedge <- function(Rx,
   V <- V / matrix(sqrt(rowSums(V^2)), n_components, d)
 
   converged <- FALSE
+  current_best <- list(meanoffdiag = Inf)
   for(iteration in 1:max_iter){
     
     # 1) Generate Rs
@@ -143,20 +153,50 @@ uwedge <- function(Rx,
     # 5) Normalise V
     V <- V / matrix(sqrt(rowSums(V^2)), n_components, d)
     
+    if(minimize_loss){
+      Rxdiag <- lapply(Rx, function(x) V %*% x %*% t(V))
+      entries_tot <- M*(n_components^2-n_components)
+      meanoffdiag <- sqrt(sum(sapply(Rxdiag, function(x) sum(x^2)-sum(diag(x^2))))/entries_tot)
+      if(meanoffdiag < current_best$meanoffdiag){
+        current_best <- list(V=V, meanoffdiag=meanoffdiag,
+                             iteration=iteration,
+                             Rxdiag=Rxdiag)
+      }
+    }
+    
     # 6) Check convergence
-    changeinV = max(abs(V-Vold))
+    changeinV <- max(abs(V-Vold))
     if(changeinV < tol){
-      converged = TRUE
+      converged <- TRUE
       break
     }
+    
+    # 7) Check condition number
+    if(!is.na(condition_threshold)){
+      if(kappa(V) > condition_threshold){
+        converged <- FALSE
+        V <- Vold
+        iteration <- iteration - 1
+        warning('Abort uwedge due to unreasonably growing condition number of unmixing matrix V')
+        break
+      }
+    }
   }
-  
+
   # Rescale
-  normaliser <- diag(V %*% Rx0 %*% t(V))
-  V <- V / matrix((sign(normaliser)*sqrt(abs(normaliser))), n_components, d)
-  Rxdiag <- lapply(Rx, function(x) V %*% x %*% t(V))
-  entries_tot <- M*(n_components^2-n_components)
-  meanoffdiag <- sqrt(sum(sapply(Rxdiag, function(x) sum(x^2)-sum(diag(x^2))))/entries_tot)
+  if(minimize_loss){
+    V <- current_best$V
+    Rxdiag <- current_best$Rxdiag
+    meanoffdiag <- current_best$meanoffdiag
+    iteration <- current_best$iteration
+  }
+  else{
+    ## normaliser <- diag(V %*% Rx0 %*% t(V))
+    ## V <- V / matrix((sign(normaliser)*sqrt(abs(normaliser))), n_components, d)
+    Rxdiag <- lapply(Rx, function(x) V %*% x %*% t(V))
+    entries_tot <- M*(n_components^2-n_components)
+    meanoffdiag <- sqrt(sum(sapply(Rxdiag, function(x) sum(x^2)-sum(diag(x^2))))/entries_tot)
+  }
   
   # Return
   if(return_diag){
