@@ -1,5 +1,10 @@
-##' Estimates the unmixing and confounded sources of the coroICA model
-##' X=A(S+H).
+##' Estimates the unmixing matrix V=A^-1 of a confounded ICA model of
+##' the form X=AS+H, where H is confounding noise which is group-wise
+##' stationary and S are non-stationary signal sources. The function
+##' can also be used without a group-structure (i.e., using a single
+##' group) in which it corresponds to a noisy ICA that allows for
+##' arbitrary stationary noise H.
+##' 
 ##'
 ##' For further details see the references.
 ##' @title coroICA
@@ -120,7 +125,7 @@
 ##' X <- t(A%*%t(S+H))
 ##' 
 ##' # Apply coroICA
-##' res <- coroICA(X, group_index, partition_index, pairing="neighbouring", rank_components=TRUE)
+##' res <- coroICA(X, group_index, partition_index, pairing="allpairs", rank_components=TRUE)
 ##' 
 ##' # Compare results
 ##' par(mfrow=c(2,2))
@@ -153,7 +158,7 @@ coroICA <- function(X,
   n <- dim(X)[1]
 
   # check timelags consistency
-  if(is.na(timelags)){
+  if(!is.numeric(timelags)){
     if(!instantcov){
       stop("No timelags and instantcov = FALSE. Change settings.")
     }
@@ -243,13 +248,25 @@ coroICA <- function(X,
   }
   else if(pairing == "allpairs"){
     no_pairs <-  0
+    unique_groups <- unique(group_index)
+    pairs_list <- vector("list", length(partition_indices))
     for(part_ind in 1:length(partition_indices)){
       partition_index <- partition_indices[[part_ind]]
-      subvec_list[[part_ind]] <- rep(0, no_groups)
+      pairs_list[[part_ind]] <- vector("list", no_groups)
       for(i in 1:no_groups){
-        env <- unique(group_index)[i]
-        subvec_list[[part_ind]][i] <- length(unique(partition_index[group_index == env]))
-        no_pairs <- no_pairs + subvec_list[[part_ind]][i]*(subvec_list[[part_ind]][i]-1)/2
+        env <- unique_groups[i]
+        unique_partitions <- unique(partition_index[group_index == env])
+        if(max_matrices == "no_partitions"){
+          no_pairs_tmp <- length(unique_partitions)
+        }
+        else{
+          no_pairs_tmp <- ceiling(max_matrices*choose(length(unique_partitions), 2))
+        }
+        pairs_list[[part_ind]][[i]] <- combn(unique_partitions,
+                                             2, simplify=FALSE)[sample(
+                                               choose(length(unique_partitions), 2),
+                                               no_pairs_tmp)]
+        no_pairs <- no_pairs + no_pairs_tmp
       }
     }
     covmats <- vector("list", no_pairs*no_timelags)
@@ -257,23 +274,20 @@ coroICA <- function(X,
     for(part_ind in 1:length(partition_indices)){
       partition_index <- partition_indices[[part_ind]]
       for(count in 1:no_groups){
-        env <- unique(group_index)[count]
-        unique_subs <- unique(partition_index[group_index == env])
-        if(subvec_list[[part_ind]][count] == 1){
+        env <- unique_groups[count]
+        if(length(pairs_list[[part_ind]][[count]]) == 1){
           warning(paste("Removing group", toString(env),
                         "since the partition is trivial, i.e., contains only one set"))
         }
         else{
-          for(i in 1:(subvec_list[[part_ind]][count]-1)){
-            for(j in (i+1):subvec_list[[part_ind]][count]){
-              ind1 <- ((partition_index == unique_subs[i]) &
-                         (group_index == env))
-              ind2 <- ((partition_index == unique_subs[j]) &
-                         (group_index == env))
-              for(timelag in timelags){
-                covmats[[idx]] <- autocov(X[ind1,], timelag) - autocov(X[ind2,], timelag)
-                idx <- idx + 1
-              }
+          for(i in 1:length(pairs_list[[part_ind]][[count]])){
+            ind1 <- ((partition_index == pairs_list[[part_ind]][[count]][[i]][1]) &
+                       (group_index == env))
+            ind2 <- ((partition_index == pairs_list[[part_ind]][[count]][[i]][2]) &
+                       (group_index == env))
+            for(timelag in timelags){
+              covmats[[idx]] <- autocov(X[ind1,], timelag) - autocov(X[ind2,], timelag)
+              idx <- idx + 1
             }
           }
         }
@@ -319,6 +333,7 @@ coroICA <- function(X,
         }
       }
     }
+    covmats <- covmats[1:(idx-1)]
   }
   else{
     stop('no appropriate pairing specified')
@@ -405,9 +420,9 @@ rigidgroup <- function(len, nosamples){
   return(index)
 }
 
-center_rowmeans <- function(x){
-  xcenter <- rowMeans(x)
-  return(x - rep(xcenter, ncol(x)))
+center_colmeans <- function(x){
+  xcenter <- colMeans(x)
+  return(x - rep(xcenter, rep.int(nrow(x), ncol(x))))
 }
 
 autocov <- function(X, lag=0){
@@ -415,11 +430,10 @@ autocov <- function(X, lag=0){
     return(cov(X))
   }
   else{
-    n <- ncol(X)
-    A <- center_rowmeans(X[, lag:n])
-    B <- center_rowmeans(X[, 1:(n-lag)])
-    new <- ncol(A) - 1
-    return((A %*% t(B))/new)
+    n <- nrow(X)
+    A <- center_colmeans(X[(lag+1):n,, drop=FALSE])
+    B <- center_colmeans(X[1:(n-lag),, drop=FALSE])
+    new <- nrow(A) - 1
+    return((t(A) %*% B)/new)
   }
 }
-

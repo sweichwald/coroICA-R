@@ -104,8 +104,12 @@ of the to be jointly diagonalised matrices, i.e., a proxy of the
 approximate joint diagonalisation objective function.}
 }
 \description{
-Estimates the unmixing and confounded sources of the coroICA model
-X=A(S+H).
+Estimates the unmixing matrix V=A^-1 of a confounded ICA model of
+the form X=AS+H, where H is confounding noise which is group-wise
+stationary and S are non-stationary signal sources. The function
+can also be used without a group-structure (i.e., using a single
+group) in which it corresponds to a noisy ICA that allows for
+arbitrary stationary noise H.
 }
 \details{
 For further details see the references.
@@ -137,7 +141,7 @@ A <- A\%*\%t(A)
 X <- t(A\%*\%t(S+H))
 
 # Apply coroICA
-res <- coroICA(X, group_index, partition_index, pairing="neighbouring", rank_components=TRUE)
+res <- coroICA(X, group_index, partition_index, pairing="allpairs", rank_components=TRUE)
 
 # Compare results
 par(mfrow=c(2,2))

@@ -96,7 +96,7 @@ uwedge <- function(Rx,
   # 0) Preprocessing
   
   # Remove and remember 0st matrix
-  if(is.na(Rx0)){
+  if(!is.matrix(Rx0)){
     Rx0 <- Rx[[1]]
   }
   d <- dim(Rx0)[1]
