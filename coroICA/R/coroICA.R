@@ -189,7 +189,7 @@ coroICA <- function(X,
 
   # generate partiton indices as needed
   if(!is.numeric(partition_index) & is.na(partitionsize)){
-    smallest_group <- min(unique(group_index, return_counts=TRUE)$counts)
+    smallest_group <- min(table(group_index))
     partition_indices <- list(rigidpartition(group_index,
                                            max(c(d, floor(smallest_group/2)))))
   }
